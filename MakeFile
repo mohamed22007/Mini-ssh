@@ -1,18 +1,30 @@
+# Compilateur et options
 CC = gcc
-CFLAGS = -Wall -Wextra -O2
+CFLAGS = -Wall -Wextra -g
 
-all: my_program
+# Cibles (Targets)
+.PHONY: all clean test
 
-# Compile la bibliothèque et le test
-test: bigNmb.o tests.o
-	$(CC) $(CFLAGS) -o run_tests bigNmb.o tests.o
-	./run_tests
+# Par défaut, on compile l'exécutable
+all: runner
 
+# Lancer les tests
+test: runner
+	./runner
+
+# Création de l'exécutable final (L'étape de Linkage)
+# C'est ici qu'on combine test.o ET bigNmb.o
+runner: test.o bigNmb.o
+	$(CC) $(CFLAGS) -o runner test.o bigNmb.o
+
+# Compilation de bigNmb.c en objet (.o)
 bigNmb.o: bigNmb.c bigNmb.h
 	$(CC) $(CFLAGS) -c bigNmb.c
 
-tests.o: tests.c bigNmb.h
-	$(CC) $(CFLAGS) -c tests.c
+# Compilation de test.c en objet (.o)
+test.o: test.c bigNmb.h
+	$(CC) $(CFLAGS) -c test.c
 
+# Nettoyage des fichiers générés
 clean:
-	rm -f *.o run_tests
+	rm -f *.o runner
