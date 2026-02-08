@@ -1,0 +1,24 @@
+name: BigNumber CI
+
+# Déclenchement sur push ou pull request sur la branche main
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+    # 1. Récupérer le code
+    - uses: actions/checkout@v3
+
+    # 2. Installer GCC (généralement déjà présent, mais bonne pratique)
+    - name: Install GCC
+      run: sudo apt-get install -y gcc
+
+    # 3. Compiler et lancer les tests via le Makefile
+    - name: Compile and Run Tests
+      run: make test
