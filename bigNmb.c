@@ -287,8 +287,8 @@ bignmb Modul_big(bignmb a, bignmb n) {
     while (Comp_big(reste, n) >= 1) {
         
         //Calculer la différence de taille en bits
-        int bits_r = Nb_Bits(reste);
-        int bits_n = Nb_Bits(n);
+        int bits_r = bit_mvc(reste);
+        int bits_n = bit_mvc(n);
         int diff = bits_r - bits_n;
         
         // Sécurité
