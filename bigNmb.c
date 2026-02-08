@@ -311,7 +311,8 @@ bignmb Modul_big(bignmb a, bignmb n) {
 
 // Foction auxiliere :
 int Est_pair(bignmb n){
-    return (n.num[0]% 2);
+    if (nulle(n)) return 1; 
+    return (n.num[0] % 2) == 0; // Retourne 1 si le reste est 0
 }
 
 // Diviser par deux 
@@ -333,14 +334,25 @@ bignmb Div_2(bignmb a) {
 
 // Puissance modulaire  a^(n) mod m
 bignmb Puis_big(bignmb a, bignmb n, bignmb m){
+    bignmb res = Int_big(1);
+    
+    // Sécurité : on commence par réduire la base
+    bignmb base = Modul_big(a, m); 
+    bignmb exp = n;
 
-    if(nulle(n)){
-        return Int_big(1);
-    }else if (Est_pair(n)){
-        return Puis_big(Modul_big(Mult_big(a,a),m),Div_2(n),m);
-    }else {
-        return Mult_big(a, Puis_big(a,Sous_big(n,Int_big(1)),m));
+    while (!nulle(exp)){
+        // Si exposant impair
+        if (!Est_pair(exp)) {
+            res = Mult_big(res, base);
+            res = Modul_big(res, m); 
+        }
+        
+        base = Mult_big(base, base);
+        base = Modul_big(base, m);
+        
+        exp = Div_2(exp);
     }
+    return res;
 }
 
 // Generer un nombre Aleatoire en C 
