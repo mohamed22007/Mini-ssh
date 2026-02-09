@@ -372,6 +372,11 @@ bignmb Ale_big(){
     // Lire les valeur aleatoire 
     size_t lus = fread(resultat.num, sizeof(uint32_t), T_MAX, fp);
 
+    if (lus != T_MAX) {
+        fprintf(stderr, "Erreur : lecture partielle depuis /dev/urandom\n");
+        exit(1);
+    }
+
     fclose(fp);
 
     int i = 32 ;
