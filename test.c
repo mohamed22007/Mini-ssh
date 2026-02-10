@@ -34,12 +34,12 @@ void test_modulo() {
 
 void test_puissance() {
     // 2^10 mod 1000 = 1024 mod 1000 = 24
-    bignmb base = Int_big(2);
+    bignmb mod = Ale_big();
     bignmb exp = Int_big(10);
-    bignmb mod = Int_big(1000);
+    bignmb base = Add_big(mod, Int_big(9));
     
     bignmb res = Puis_big(base, exp, mod);
-    assert(res.num[0] == 24);
+    assert(res.num[0] == 3486784401);
     printf("[OK] Puissance\n");
 }
 
