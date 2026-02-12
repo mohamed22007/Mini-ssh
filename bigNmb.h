@@ -1,43 +1,49 @@
-#ifndef BIG_NUM
-#define BIG_NUM
+#ifndef BIGNMB_H
+#define BIGNMB_H
 
-#define T_MAX 70
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
 
-#include<stdint.h>
+// On définit la capacité max (en mots de 64 bits)
+#define T_MAX 32 
+// On definie capacite limiter pour que le resultat ne depasse 
+// pas T_MAX
+#define T_LIMIT 16
 
-// Type pour definir les grands nombre de 1024 bits et moins
-typedef struct
-{
-    int Length; //Longeur actuel de nombre
-    uint32_t num[T_MAX]; // N = sommes des (2^32)^(i)*num[i]
-}bignmb;
+// Type pour definie les grand nombre 
+// Premier indice est le taille de nombre (blocs considerer)
+typedef uint64_t* bignmb;
 
-// From int to bignmb
-bignmb Int_big(uint32_t a);
+// --- Fonctions C ---
+// Initialise un Nombre 
+bignmb new_big(uint64_t val);
+// Supprimer 
+void free_big(bignmb n);
+// Afficher un Gran nombre
+void print_big(bignmb n);
+// Genere un nombre aleatoire 
+bignmb gen_aleatoire();
 
-// Additon entre deux grands nombres
+
+// --- Fonctions Assenmbleur ---
+// Addiction deux nombres
+extern uint64_t asm_add(uint64_t* dest, uint64_t* src, uint64_t len);
+
+// Soustrait b de a. avec a > b
+extern uint64_t asm_sub(uint64_t* a, uint64_t* b, uint64_t len);
+
+// multiplie le Grand Nombre 'src' par un mot de 64 bits 'scalaire'.
+extern void asm_mult(uint64_t* dest, uint64_t* src, uint64_t scalaire, uint64_t len);
+
+// --- Operation Arthimetiquer ---
+// Addition a = a + b
 bignmb Add_big(bignmb a, bignmb b);
-
-// Multiplication entre deux grands nombres 
+// Addition a = a - b
+bignmb Sub_big(bignmb a, bignmb b);
+// Addition a = a + b*n
 bignmb Mult_big(bignmb a, bignmb b);
-
-// Soustraction entre deux grand Nombres
-bignmb Sous_big(bignmb a, bignmb b);
-
-// Modulo a = b mod n
-bignmb Modul_big(bignmb a, bignmb n);
-
-// Puissance modulo b = a^(n) mod m
-bignmb Puis_big(bignmb a, bignmb n, bignmb m);
-
-// Generer un big nombre aleatoire 
-bignmb Ale_big();
-
-// Afficher un nombre big
-void Aff_big(bignmb a);
-
-// Comparer deux grand nombres
-int Comp_big(bignmb a, bignmb b);
 
 
 #endif
