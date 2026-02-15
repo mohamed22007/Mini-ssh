@@ -1,6 +1,6 @@
 .global asm_add
 .global asm_sub
-.global asm_mul
+.global asm_mult
 .intel_syntax noprefix
 
 # Addition
@@ -66,7 +66,7 @@ asm_sub:
 # RDX : Scalaire n 
 # RCX : longeur des nombes (index)
 # RAX : Retour le reste 
-asm_mul:
+asm_mult:
     clc
     test rcx, rcx
     jz .fin_mul

@@ -5,12 +5,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
+#include <string.h> 
 
 // On définit la capacité max (en mots de 64 bits)
-#define T_MAX 32 
-// On definie capacite limiter pour que le resultat ne depasse 
-// pas T_MAX
-#define T_LIMIT 16
+#define T_MAX 128 
+// On definie capacite limiter pour que le resultat ne depasse pas T_MAX
+#define T_LIMIT 32
 
 // Type pour definie les grand nombre 
 // Premier indice est le taille de nombre (blocs considerer)
@@ -44,6 +44,26 @@ bignmb Add_big(bignmb a, bignmb b);
 bignmb Sub_big(bignmb a, bignmb b);
 // Addition a = a + b*n
 bignmb Mult_big(bignmb a, bignmb b);
+// Modulo de res = a*b (mod n)
+bignmb Montgomery_Mult(bignmb a, bignmb b, bignmb n);
+// Fonction de comparaion si a>b reurn 1 sino return 0 et si a==b return 2
+int Comp_big(bignmb a, bignmb b);
+// Fonction pour pré-calculer la constante de Montgomery
+bignmb Calculer_R2_Mod_N(bignmb n);
+// Puissance modulaire (prend R2 en paramètre maintenant)
+bignmb Puiss_big(bignmb a, bignmb e, bignmb n, bignmb precalc_r2);
 
+// --- Fonction de Tests ---
+// Décompose n-1 en 2^s * d
+// Retourne s et modifie d sur place
+int decomposition_n_minus_1(bignmb n, bignmb d);
+// Test de Miller-Rabin (k itérations)
+int Miller_Rabin(bignmb n, int k);
+// Vérifier est ce qu'il est divisible par un petit nombre premier (< 256)
+int est_divisible_par_petits_premiers(bignmb n);
+
+
+// Fonction principale pour genere un nombre premier 
+bignmb Gen_premier();
 
 #endif
