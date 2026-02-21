@@ -1,5 +1,6 @@
 #include "bigNmb.h"
 #include <string.h> 
+#define NMB_TEST 35
 
 // Initialisation d'un BigInt
 bignmb new_big(uint64_t val) {
@@ -130,8 +131,16 @@ bignmb Mult_big(bignmb a, bignmb b) {
         uint64_t scalaire = b[i+1]; 
         if (scalaire == 0) continue;
 
-        // On appelle asm_mul
-        asm_mult(&res[1 + i], &a[1], scalaire, a[0]);
+        // asm_mult retourne la retenue finale du dernier mot
+        uint64_t carry = asm_mult(&res[1 + i], &a[1], scalaire, a[0]);
+
+        // Propager la retenue dans les mots suivants
+        uint64_t j = 1 + i + a[0];
+        while (carry && j <= T_MAX) {
+            res[j] += carry;
+            carry = (res[j] < carry) ? 1 : 0;
+            j++;
+        }
     }
 
     // Recalculer la taille réelle
@@ -550,9 +559,274 @@ bignmb Gen_premier() {
         // Miller-Rabin (Test probabiliste)
         if (Miller_Rabin(n, 5)) {
             // Pour La sécurite
-            if (Miller_Rabin(n, 20)) {
+            if (Miller_Rabin(n, NMB_TEST)) {
                 return n; // Trouvé 
             }
         }
     }
+}
+
+// Soustraction modulaire : calcule (a - b) mod n
+bignmb Sub_mod_big(bignmb a, bignmb b, bignmb n) {
+    bignmb res;
+    if (Comp_big(a, b) >= 0) {
+        res = Sub_big(a, b);
+    } else {
+        bignmb tmp = Add_big(a, n);
+        res = Sub_big(tmp, b);
+        free_big(tmp); // On libère le temporaire
+    }
+    return res;
+}
+
+// Divise un BigInt par 2 (décalage bit à bit vers la droite)
+void Div2_big(bignmb a) {
+    uint64_t carry = 0;
+    for (int i = a[0]; i >= 1; i--) {
+        uint64_t next_carry = (a[i] & 1) << 63; // On récupère le bit sortant
+        a[i] = (a[i] >> 1) | carry;
+        carry = next_carry;
+    }
+    // Nettoyage de la taille si le mot de poids fort devient 0
+    if (a[0] > 1 && a[a[0]] == 0) {
+        a[0]--;
+    }
+}
+
+// Modulo robuste : retourne a % b
+bignmb Mod_big(bignmb a, bignmb b) {
+    bignmb R = new_big(0);
+    copy_big(R, a);
+    if (Comp_big(R, b) < 0) return R;
+
+    bignmb D = new_big(0);
+    copy_big(D, b);
+
+    int a_bits = 0, b_bits = 0;
+    for(int i = a[0]; i >= 1; i--) { if(a[i]) { a_bits = (i-1)*64 + 63; uint64_t t=a[i]; while(!(t&0x8000000000000000ULL)) { t<<=1; a_bits--; } break; } }
+    for(int i = b[0]; i >= 1; i--) { if(b[i]) { b_bits = (i-1)*64 + 63; uint64_t t=b[i]; while(!(t&0x8000000000000000ULL)) { t<<=1; b_bits--; } break; } }
+
+    int shift = a_bits - b_bits;
+    if (shift < 0) { free_big(D); return R; }
+
+    for (int k = 0; k < shift; k++) {
+        uint64_t carry = 0;
+        for (int i = 1; i <= (int)D[0]; i++) {
+            uint64_t nc = (D[i] >> 63);
+            D[i] = (D[i] << 1) | carry;
+            carry = nc;
+        }
+        if (carry && D[0] < T_MAX) { D[0]++; D[D[0]] = carry; }
+    }
+
+    for (int k = 0; k <= shift; k++) {
+        if (Comp_big(R, D) >= 0) {
+            bignmb tmp = Sub_big(R, D);
+            free_big(R);
+            R = tmp;
+        }
+        Div2_big(D);
+    }
+
+    free_big(D);
+    return R;
+}
+
+// Euclide étendu : retourne x tel que a*x ≡ 1 (mod m)
+// Représentation signée : on maintient (old_r, r) et (old_s, s)
+// avec le signe stocké séparément (0 = positif, 1 = négatif)
+bignmb inverse(bignmb a, bignmb m) {
+    // old_r = a, r = m
+    bignmb old_r = new_big(0); copy_big(old_r, a);
+    bignmb r     = new_big(0); copy_big(r, m);
+
+    // old_s = 1, s = 0  (coefficients de Bézout pour a)
+    bignmb old_s = new_big(1);
+    bignmb s     = new_big(0);
+    int old_s_neg = 0;  // signe de old_s (0=positif, 1=négatif)
+    int s_neg     = 0;
+
+    bignmb zero = new_big(0);
+
+    while (Comp_big(r, zero) != 0) {
+        // quotient = old_r / r  (on calcule via Mod_big : old_r = q*r + rem)
+        // On a besoin de q = (old_r - rem) / r
+        // On utilise : rem = Mod_big(old_r, r), puis q*r = old_r - rem
+
+        bignmb rem = Mod_big(old_r, r);
+
+        // Calculer quotient q = (old_r - rem) / r par soustraction répétée
+        // Mais c'est trop lent. On calcule q différemment :
+        // On fait la division bit à bit
+        bignmb numerator = Sub_big(old_r, rem);
+        
+        // Division exacte : q = numerator / r  (numerator est divisible par r)
+        // On fait ça avec un shift + soustraction
+        bignmb q = new_big(0);
+        if (Comp_big(numerator, zero) != 0) {
+            // Calculer nb de bits de numerator et r
+            int n_bits = 0, d_bits = 0;
+            for (int i = numerator[0]; i >= 1; i--) {
+                if (numerator[i]) {
+                    n_bits = (i-1)*64 + 63;
+                    uint64_t t = numerator[i];
+                    while (!(t & 0x8000000000000000ULL)) { t <<= 1; n_bits--; }
+                    break;
+                }
+            }
+            for (int i = r[0]; i >= 1; i--) {
+                if (r[i]) {
+                    d_bits = (i-1)*64 + 63;
+                    uint64_t t = r[i];
+                    while (!(t & 0x8000000000000000ULL)) { t <<= 1; d_bits--; }
+                    break;
+                }
+            }
+            int shift = n_bits - d_bits;
+
+            // D = r << shift
+            bignmb D = new_big(0); copy_big(D, r);
+            for (int k = 0; k < shift; k++) {
+                uint64_t carry = 0;
+                for (int i = 1; i <= (int)D[0]; i++) {
+                    uint64_t nc = (D[i] >> 63);
+                    D[i] = (D[i] << 1) | carry;
+                    carry = nc;
+                }
+                if (carry && D[0] < T_MAX) { D[0]++; D[D[0]] = carry; }
+            }
+
+            bignmb N2 = new_big(0); copy_big(N2, numerator);
+            for (int k = shift; k >= 0; k--) {
+                if (Comp_big(N2, D) >= 0) {
+                    bignmb t2 = Sub_big(N2, D); free_big(N2); N2 = t2;
+                    // q += 1 << k
+                    // On ajoute 2^k à q : trouver le mot et le bit
+                    int word = k / 64 + 1;
+                    int bit  = k % 64;
+                    if (word <= T_MAX) {
+                        if (q[0] < (uint64_t)word) q[0] = word;
+                        q[word] += (1ULL << bit);
+                        // propager retenue
+                        uint64_t carry2 = 0;
+                        if (q[word] < (1ULL << bit)) carry2 = 1; // overflow
+                        // simple carry propagation
+                        for (int wi = word; carry2 && wi <= T_MAX; wi++) {
+                            q[wi] += carry2;
+                            carry2 = (q[wi] == 0) ? 1 : 0;
+                        }
+                    }
+                }
+                // D >>= 1
+                uint64_t carry = 0;
+                for (int i = (int)D[0]; i >= 1; i--) {
+                    uint64_t nc = (D[i] & 1) << 63;
+                    D[i] = (D[i] >> 1) | carry;
+                    carry = nc;
+                }
+                if (D[0] > 1 && D[D[0]] == 0) D[0]--;
+            }
+            free_big(D);
+            free_big(N2);
+        }
+        free_big(numerator);
+
+        // Rotation : old_r, r = r, rem
+        free_big(old_r);
+        old_r = r;
+        r = rem;
+
+        // new_s = old_s - q * s
+        // avec gestion du signe
+        bignmb qs = Mult_big(q, s);
+        free_big(q);
+
+        // new_s_neg et new_s = old_s - q*s (signé)
+        bignmb new_s;
+        int new_s_neg;
+
+        if (old_s_neg == s_neg) {
+            // Même signe : soustraction
+            if (Comp_big(old_s, qs) >= 0) {
+                new_s = Sub_big(old_s, qs);
+                new_s_neg = old_s_neg;
+            } else {
+                new_s = Sub_big(qs, old_s);
+                new_s_neg = !old_s_neg;
+            }
+        } else {
+            // Signes opposés : addition
+            new_s = Add_big(old_s, qs);
+            new_s_neg = old_s_neg;
+        }
+        free_big(qs);
+        free_big(old_s);
+        old_s     = s;
+        old_s_neg = s_neg;
+        s         = new_s;
+        s_neg     = new_s_neg;
+    }
+
+    // Résultat dans old_s, de signe old_s_neg
+    // Si négatif, on ramène dans [0, m) : résultat = m - old_s
+    bignmb result;
+    if (old_s_neg) {
+        result = Sub_big(m, old_s);
+    } else {
+        result = new_big(0);
+        copy_big(result, old_s);
+    }
+
+    // Réduction finale mod m au cas où
+    while (Comp_big(result, m) >= 0) {
+        bignmb t = Sub_big(result, m);
+        free_big(result);
+        result = t;
+    }
+
+    free_big(old_r); free_big(r);
+    free_big(old_s); free_big(s);
+    free_big(zero);
+    return result;
+}
+
+// Géneration de cles public et prive 
+cles Gen_cles(){
+    // container de Resulats
+    cles resultat;
+    // Cles pubilc e (Valeur Standard)
+    bignmb e = new_big(65537);
+    resultat.e= e;
+
+    bignmb un = new_big(1);
+    // Indentifient d'euler
+    bignmb phi_n;
+    bignmb n;
+
+    // Pour assurer que e et phi_n sont premier entre eux
+    do {
+        // Les nombres premiers necessaire pour le codege
+        bignmb p = Gen_premier();
+        bignmb q = Gen_premier();
+
+        // n et euler de n 
+        bignmb n = Mult_big(p,q);
+        bignmb phi_n = Mult_big(Sub_big(p,un),Sub_big(q,un));
+
+        //nettoyer
+        free(p);
+        free(q);
+
+    } while (big_mod_small(phi_n, e) != 0);
+    
+    resultat.n = n ;
+    // Trouver le inverse de e 
+    bignmb d = inverse(e,phi_n);
+    resultat.d = d;
+
+    // Nettoyage 
+    free(phi_n);
+    free(un);
+
+    return resultat ;
 }

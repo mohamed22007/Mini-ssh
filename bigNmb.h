@@ -16,6 +16,14 @@
 // Premier indice est le taille de nombre (blocs considerer)
 typedef uint64_t* bignmb;
 
+typedef struct 
+{
+    bignmb n;
+    bignmb e;
+    bignmb d;
+} cles;
+
+
 // --- Fonctions C ---
 // Initialise un Nombre 
 bignmb new_big(uint64_t val);
@@ -35,7 +43,16 @@ extern uint64_t asm_add(uint64_t* dest, uint64_t* src, uint64_t len);
 extern uint64_t asm_sub(uint64_t* a, uint64_t* b, uint64_t len);
 
 // multiplie le Grand Nombre 'src' par un mot de 64 bits 'scalaire'.
-extern void asm_mult(uint64_t* dest, uint64_t* src, uint64_t scalaire, uint64_t len);
+extern uint64_t asm_mult(uint64_t* dest, uint64_t* src, uint64_t scalaire, uint64_t len);
+
+// --- Fonctions Utilitaires internes ---
+void copy_big(bignmb dest, bignmb src);
+void Div2_big(bignmb a);
+bignmb inverse(bignmb a, bignmb m);
+uint64_t big_mod_small(bignmb n, uint64_t d);
+bignmb Sub_mod_big(bignmb a, bignmb b, bignmb n);
+// Modulo a % b
+bignmb Mod_big(bignmb a, bignmb b);
 
 // --- Operation Arthimetiquer ---
 // Addition a = a + b
@@ -65,5 +82,7 @@ int est_divisible_par_petits_premiers(bignmb n);
 
 // Fonction principale pour genere un nombre premier 
 bignmb Gen_premier();
+// Fonctio trouber les cles pubilque et 
+cles Gen_cles();
 
 #endif
