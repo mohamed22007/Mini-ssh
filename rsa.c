@@ -3,17 +3,12 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-// ============================================================================
-// PARTIE 1 : GENERATION DES CLES ET PARAMETRES CRT
-// ============================================================================
-
+// GENERATION DES CLES ET PARAMETRES CRT
 rsa_keys generate_rsa_keys() {
     rsa_keys keys;
     bignmb un = new_big(1);
     bignmb p_minus_1, q_minus_1, phi_n;
 
-    // Regénérer p et q jusqu'à ce que gcd(e=65537, phi_n) == 1
-    // 65537 est premier donc gcd(e, phi_n)=1  <=>  phi_n % 65537 != 0
     while (1) {
         keys.p = Gen_premier();
         keys.q = Gen_premier();
@@ -62,9 +57,7 @@ void free_rsa_keys(rsa_keys* keys) {
     if (keys->qinv) free_big(keys->qinv);
 }
 
-// ============================================================================
-// PARTIE 3 : UTILITAIRES DE FORMATAGE BINAIRE ET BASE64
-// ============================================================================
+// UTILITAIRES DE FORMATAGE BINAIRE ET BASE64
 
 // Encodeur Base64 complet et standardisé
 static const char base64_chars[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -87,6 +80,7 @@ void base64_encode(const uint8_t* data, size_t input_length, char* encoded_data)
     }
     encoded_data[j] = '\0';
 }
+
 // Convertit un bignmb en tableau d'octets (Big-Endian)
 size_t big_to_bytes(bignmb a, uint8_t** buffer) {
     size_t size = a[0] * 8; 
@@ -116,9 +110,7 @@ size_t big_to_bytes(bignmb a, uint8_t** buffer) {
     return final_len;
 }
 
-// ============================================================================
-// PARTIE 4 : EXPORT DES CLES (SSH et PEM)
-// ============================================================================
+// EXPORT DES CLES (SSH et PEM)
 
 // Écrit un uint32 en Big-Endian dans un buffer
 void write_u32_be(uint8_t* buf, uint32_t val) {
@@ -159,20 +151,153 @@ int export_public_key_ssh(rsa_keys* keys, const char* filename, const char* comm
     return 0;
 }
 
-// Exporte la clé privée au format id_rsa (PEM / ASN.1 DER)
+// ENCODAGE ASN.1 DER (pour clé privée PKCS#1)
+
+
+static size_t der_len_size(size_t len) {
+    if (len < 128)   return 1;
+    if (len < 256)   return 2;
+    if (len < 65536) return 3;
+    return 4;
+}
+
+
+static size_t der_write_len(uint8_t* buf, size_t len) {
+    if (len < 128) {
+        buf[0] = (uint8_t)len;
+        return 1;
+    } else if (len < 256) {
+        buf[0] = 0x81;
+        buf[1] = (uint8_t)len;
+        return 2;
+    } else if (len < 65536) {
+        buf[0] = 0x82;
+        buf[1] = (uint8_t)(len >> 8);
+        buf[2] = (uint8_t)(len & 0xFF);
+        return 3;
+    } else {
+        buf[0] = 0x83;
+        buf[1] = (uint8_t)(len >> 16);
+        buf[2] = (uint8_t)(len >> 8);
+        buf[3] = (uint8_t)(len & 0xFF);
+        return 4;
+    }
+}
+
+
+static size_t der_write_integer(uint8_t* buf, const uint8_t* data, size_t data_len) {
+    size_t offset = 0;
+    buf[offset++] = 0x02;                          
+    offset += der_write_len(buf + offset, data_len);
+    memcpy(buf + offset, data, data_len);
+    offset += data_len;
+    return offset;
+}
+
+static size_t der_integer_size(size_t data_len) {
+    return 1 + der_len_size(data_len) + data_len;
+}
+
+
 int export_private_key_pem(rsa_keys* keys, const char* filename) {
-    // La construction d'une structure ASN.1 DER est complexe. 
-    // Il faut concaténer [0x02, Len, Value] pour Version(0), n, e, d, p, q, dp, dq, qinv
-    // Puis englober le tout dans une Sequence [0x30, TotalLen, Datas...]
-    
-    // À ce stade de ton projet, tu devras construire un buffer et l'encoder en Base64.
-    // L'architecture de la fonction ressemblera à l'export SSH, mais avec les tags ASN.1.
-    
+
+    /*  Convertir chaque composante en octets Big-Endian  */
+    uint8_t* ver_bytes   = NULL; size_t ver_len   = 0;
+    uint8_t* n_bytes     = NULL; size_t n_len     = 0;
+    uint8_t* e_bytes     = NULL; size_t e_len     = 0;
+    uint8_t* d_bytes     = NULL; size_t d_len     = 0;
+    uint8_t* p_bytes     = NULL; size_t p_len     = 0;
+    uint8_t* q_bytes     = NULL; size_t q_len     = 0;
+    uint8_t* dp_bytes    = NULL; size_t dp_len    = 0;
+    uint8_t* dq_bytes    = NULL; size_t dq_len    = 0;
+    uint8_t* qinv_bytes  = NULL; size_t qinv_len  = 0;
+
+    /* version = 0 */
+    ver_bytes  = (uint8_t*)malloc(1);
+    ver_bytes[0] = 0x00;
+    ver_len    = 1;
+
+    n_len    = big_to_bytes(keys->n,    &n_bytes);
+    e_len    = big_to_bytes(keys->e,    &e_bytes);
+    d_len    = big_to_bytes(keys->d,    &d_bytes);
+    p_len    = big_to_bytes(keys->p,    &p_bytes);
+    q_len    = big_to_bytes(keys->q,    &q_bytes);
+    dp_len   = big_to_bytes(keys->dp,   &dp_bytes);
+    dq_len   = big_to_bytes(keys->dq,   &dq_bytes);
+    qinv_len = big_to_bytes(keys->qinv, &qinv_bytes);
+
+    /* Calculer la taille du contenu de la SEQUENCE  */
+    size_t seq_content_len =
+        der_integer_size(ver_len)  +
+        der_integer_size(n_len)    +
+        der_integer_size(e_len)    +
+        der_integer_size(d_len)    +
+        der_integer_size(p_len)    +
+        der_integer_size(q_len)    +
+        der_integer_size(dp_len)   +
+        der_integer_size(dq_len)   +
+        der_integer_size(qinv_len);
+
+    size_t total_der_len = 1 + der_len_size(seq_content_len) + seq_content_len;
+
+    /* ----- 3. Construire le buffer DER ----- */
+    uint8_t* der = (uint8_t*)malloc(total_der_len);
+    if (!der) {
+        free(ver_bytes); free(n_bytes); free(e_bytes); free(d_bytes);
+        free(p_bytes); free(q_bytes); free(dp_bytes); free(dq_bytes);
+        free(qinv_bytes);
+        return -1;
+    }
+
+    size_t offset = 0;
+
+    /* Tag SEQUENCE */
+    der[offset++] = 0x30;
+
+    /* Longueur de la séquence */
+    offset += der_write_len(der + offset, seq_content_len);
+
+    /* Écriture de chaque INTEGER */
+    offset += der_write_integer(der + offset, ver_bytes,  ver_len);
+    offset += der_write_integer(der + offset, n_bytes,    n_len);
+    offset += der_write_integer(der + offset, e_bytes,    e_len);
+    offset += der_write_integer(der + offset, d_bytes,    d_len);
+    offset += der_write_integer(der + offset, p_bytes,    p_len);
+    offset += der_write_integer(der + offset, q_bytes,    q_len);
+    offset += der_write_integer(der + offset, dp_bytes,   dp_len);
+    offset += der_write_integer(der + offset, dq_bytes,   dq_len);
+    offset += der_write_integer(der + offset, qinv_bytes, qinv_len);
+
+    /*  Encoder en Base64 avec retours à la ligne tous les 64 caractères */
+    size_t b64_max = (total_der_len / 3 + 1) * 4 + 4;
+    char*  b64_raw = (char*)malloc(b64_max);
+    base64_encode(der, total_der_len, b64_raw);
+
+    /* Écrire le fichier PEM  */
     FILE* f = fopen(filename, "w");
-    if (!f) return -1;
+    if (!f) {
+        free(ver_bytes); free(n_bytes); free(e_bytes); free(d_bytes);
+        free(p_bytes); free(q_bytes); free(dp_bytes); free(dq_bytes);
+        free(qinv_bytes); free(der); free(b64_raw);
+        return -1;
+    }
+
     fprintf(f, "-----BEGIN RSA PRIVATE KEY-----\n");
-    // fprintf(f, "%s\n", base64_der_blob);
+
+    /* Écriture du Base64 par blocs de 64 caractères (norme PEM) */
+    size_t b64_len = strlen(b64_raw);
+    for (size_t i = 0; i < b64_len; i += 64) {
+        size_t chunk = (b64_len - i < 64) ? (b64_len - i) : 64;
+        fwrite(b64_raw + i, 1, chunk, f);
+        fputc('\n', f);
+    }
+
     fprintf(f, "-----END RSA PRIVATE KEY-----\n");
+
+    /* Nettoyage  */
+    free(ver_bytes); free(n_bytes); free(e_bytes); free(d_bytes);
+    free(p_bytes); free(q_bytes); free(dp_bytes); free(dq_bytes);
+    free(qinv_bytes); free(der); free(b64_raw);
     fclose(f);
     return 0;
 }

@@ -632,11 +632,9 @@ bignmb Mod_big(bignmb a, bignmb b) {
     return R;
 }
 
-// Euclide étendu : retourne x tel que a*x ≡ 1 (mod m)
-// Représentation signée : on maintient (old_r, r) et (old_s, s)
-// avec le signe stocké séparément (0 = positif, 1 = négatif)
+// Euclide étendu retourne x tel que a*x ≡ 1 (mod m)
 bignmb inverse(bignmb a, bignmb m) {
-    // old_r = a, r = m
+
     bignmb old_r = new_big(0); copy_big(old_r, a);
     bignmb r     = new_big(0); copy_big(r, m);
 
@@ -649,19 +647,9 @@ bignmb inverse(bignmb a, bignmb m) {
     bignmb zero = new_big(0);
 
     while (Comp_big(r, zero) != 0) {
-        // quotient = old_r / r  (on calcule via Mod_big : old_r = q*r + rem)
-        // On a besoin de q = (old_r - rem) / r
-        // On utilise : rem = Mod_big(old_r, r), puis q*r = old_r - rem
-
         bignmb rem = Mod_big(old_r, r);
-
-        // Calculer quotient q = (old_r - rem) / r par soustraction répétée
-        // Mais c'est trop lent. On calcule q différemment :
-        // On fait la division bit à bit
         bignmb numerator = Sub_big(old_r, rem);
         
-        // Division exacte : q = numerator / r  (numerator est divisible par r)
-        // On fait ça avec un shift + soustraction
         bignmb q = new_big(0);
         if (Comp_big(numerator, zero) != 0) {
             // Calculer nb de bits de numerator et r
