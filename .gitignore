@@ -1,0 +1,16 @@
+# Fichiers compilés et exécutables
+*.o
+Mssh
+test_prog
+keygen
+
+# Clés cryptographiques (NE JAMAIS POUSSER)
+id_rsa
+id_rsa.pub
+ma_cle_privee
+ma_cle.pub
+
+# Fichiers de test générés
+*.enc
+message.txt
+message_decrypte.txt
