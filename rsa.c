@@ -429,8 +429,14 @@ int chiffrer_fichier(const char* fichier_in, const char* fichier_out, bignmb e, 
         // Ajuster la taille pour toujours écrire RSA_KEY_SIZE octets
         uint8_t bloc_final[RSA_KEY_SIZE];
         memset(bloc_final, 0, RSA_KEY_SIZE);
+        
         if (c_len <= RSA_KEY_SIZE) {
             memcpy(bloc_final + (RSA_KEY_SIZE - c_len), c_bytes, c_len);
+        } else if (c_len == RSA_KEY_SIZE + 1 && c_bytes[0] == 0x00) {
+            // big_to_bytes a ajouté un 0x00 de signe, on l'ignore pour l'écriture !
+            memcpy(bloc_final, c_bytes + 1, RSA_KEY_SIZE);
+        } else {
+            fprintf(stderr, "Erreur inattendue : bloc chiffré trop grand (%zu octets)\n", c_len);
         }
 
         // Écriture dans le fichier
@@ -607,13 +613,13 @@ int import_public_key_ssh(const char* filename, bignmb* e_out, bignmb* n_out) {
 }
 
 // Fonction locale pour lire un INTEGER dans l'ASN.1
-    bignmb read_next_integer(const uint8_t* buffer, size_t* off) {
-        if (buffer[(*off)++] != 0x02) return NULL; // Vérifier le tag INTEGER
-        size_t len = read_der_len(buffer, off);
-        bignmb res = bytes_to_big(buffer + *off, len);
-        *off += len;
-        return res;
-    }
+static bignmb read_next_integer(const uint8_t* buffer, size_t* off) {
+    if (buffer[(*off)++] != 0x02) return NULL; // Vérifier le tag INTEGER
+    size_t len = read_der_len(buffer, off);
+    bignmb res = bytes_to_big(buffer + *off, len);
+    *off += len;
+    return res;
+}
     
 
 
