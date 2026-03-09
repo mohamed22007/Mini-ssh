@@ -89,6 +89,7 @@ int main(int argc, char *argv[]) {
     }
 
     // ==========================================
+   // ==========================================
     // COMMANDE 3 : DECRYPT (Déchiffrement)
     // ==========================================
     else if (strcmp(command, "decrypt") == 0) {
@@ -101,11 +102,14 @@ int main(int argc, char *argv[]) {
         const char *src_file = argv[3];
         const char *dest_file = argv[4];
 
-        rsa_keys keys;
-        // On initialise à NULL pour que free_rsa_keys fonctionne même si l'import échoue partiellement
-        memset(&keys, 0, sizeof(rsa_keys)); 
-
-        keys = import_private_key_pem(priv_key_file);
+        rsa_keys keys = import_private_key_pem(priv_key_file);
+        
+        // --- NOUVELLE VERIFICATION ICI ---
+        if (keys.n == NULL) {
+            fprintf(stderr, "Opération annulée : La clé privée est introuvable ou invalide.\n");
+            return EXIT_FAILURE;
+        }
+        // ---------------------------------
 
         if (dechiffrer_fichier(src_file, dest_file, keys) != 0) {
             fprintf(stderr, "Échec du déchiffrement.\n");
@@ -113,6 +117,7 @@ int main(int argc, char *argv[]) {
             return EXIT_FAILURE;
         }
 
+        printf("Déchiffrement réussi ! Fichier sauvegardé sous : %s\n", dest_file);
         free_rsa_keys(&keys);
         return EXIT_SUCCESS;
     }

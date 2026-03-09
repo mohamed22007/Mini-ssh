@@ -646,12 +646,16 @@ static bignmb read_next_integer(const uint8_t* buffer, size_t* off) {
     return res;
 }
     
-
-
 // Importe la clé privée depuis un fichier PEM
 rsa_keys import_private_key_pem(const char* filename) {
+    rsa_keys keys;
+    memset(&keys, 0, sizeof(rsa_keys)); // Initialiser à 0
+
     FILE* f = fopen(filename, "r");
-    if (!f) exit(0);
+    if (!f) {
+        fprintf(stderr, "Erreur FATALE : Impossible d'ouvrir la clé privée '%s'. Vérifiez le nom du fichier.\n", filename);
+        return keys; // Retourne une structure vide au lieu de crasher
+    }
 
     char b64_buffer[16384] = {0};
     char line[256];
@@ -669,14 +673,16 @@ rsa_keys import_private_key_pem(const char* filename) {
     size_t offset = 0;
 
     // Vérifier le tag SEQUENCE (0x30)
-    if (der[offset++] != 0x30) exit(0);
+    if (der_len == 0 || der[offset++] != 0x30) {
+        fprintf(stderr, "Erreur FATALE : Format de la clé privée PEM/DER invalide ou corrompu.\n");
+        return keys;
+    }
+    
     read_der_len(der, &offset); // On passe la longueur globale
-
 
     // Extraction dans l'ordre strict de la norme PKCS#1
     bignmb version = read_next_integer(der, &offset); 
     free_big(version);
-    rsa_keys keys ;
     
     keys.n    = read_next_integer(der, &offset);
     keys.e    = read_next_integer(der, &offset);

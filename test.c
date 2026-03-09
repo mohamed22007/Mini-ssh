@@ -2,7 +2,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
+#include <string.h>
 #include "bigNmb.h"
+#include "rsa.h"
 
 double get_time_sec() {
     struct timespec ts;
@@ -121,21 +123,68 @@ void test_prime_gen() {
     free_big(q);
 }
 
+void test_rsa_workflow() {
+    printf("\n--- TEST CHIFFREMENT / DECHIFFREMENT ---\n");
+    printf("Génération des clés pour le test...\n");
+    rsa_keys keys = generate_rsa_keys();
+    
+    const char* original_file = "test_original.txt";
+    const char* enc_file = "test_encrypted.enc";
+    const char* dec_file = "test_decrypted.txt";
+    const char* secret_message = "Message de test super secret pour la CI!";
+
+    // 1. Créer le fichier original
+    FILE *f = fopen(original_file, "w");
+    fprintf(f, "%s", secret_message);
+    fclose(f);
+
+    // 2. Chiffrer
+    printf("Chiffrement du fichier...\n");
+    chiffrer_fichier(original_file, enc_file, keys.e, keys.n);
+    
+    // 3. Déchiffrer
+    printf("Déchiffrement du fichier...\n");
+    dechiffrer_fichier(enc_file, dec_file, keys);
+
+    // 4. Comparer
+    f = fopen(dec_file, "r");
+    char buffer[256] = {0};
+    fgets(buffer, sizeof(buffer), f);
+    fclose(f);
+
+    if (strcmp(buffer, secret_message) == 0) {
+        printf("✅ SUCCÈS : Le message déchiffré est strictement identique à l'original !\n");
+    } else {
+        fprintf(stderr, "❌ ÉCHEC : Le message déchiffré est différent !\n");
+        fprintf(stderr, "Attendu : %s\nObtenu  : %s\n", secret_message, buffer);
+        exit(EXIT_FAILURE); // Fait échouer la CI en cas d'erreur
+    }
+
+    // Nettoyage
+    free_rsa_keys(&keys);
+    remove(original_file);
+    remove(enc_file);
+    remove(dec_file);
+}
+
 int main() {
     srand(time(NULL));
 
+    // Exécution du test complet RSA
+    test_rsa_workflow();
+
+    // Vous pouvez décommenter les autres tests de performance si besoin
+    
     bignmb a = gen_aleatoire();
     bignmb b = gen_aleatoire();
-
     test_add(a,b);
     test_sub(a,b);
     test_mult(a,b);
     test_pow(a,b);
     test_miller();
     test_prime_gen();
+    free_big(a); free_big(b);
+    
 
-    free_big(a);
-    free_big(b);
-
-    return 0;
+    return EXIT_SUCCESS;
 }

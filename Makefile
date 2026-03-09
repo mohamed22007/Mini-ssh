@@ -28,6 +28,14 @@ $(TARGET): $(OBJ)
 run: $(TARGET)
 	./$(TARGET) keygen id_rsa.pub id_rsa
 
+# Règle pour compiler les tests
+test_prog: test.c rsa.c bigNmb.c operation.s
+	$(CC) $(CFLAGS) -o test_prog $^
+
+# Exécuter les tests
+run_tests: test_prog
+	./test_prog
+	
 # Nettoyer les fichiers générés
 clean:
 	rm -f $(OBJ) $(TARGET)

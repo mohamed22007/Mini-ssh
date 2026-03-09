@@ -4,8 +4,14 @@ Mssh
 test_prog
 keygen
 
-# Clés cryptographiques (NE JAMAIS POUSSER)
-id_rsa
-id_rsa.pub
-ma_cle_privee
-ma_cle.pub
+# Fichiers chiffrés
+*.enc
+
+# ==========================================
+# NE JAMAIS POUSSER DE CLÉS CRYPTOGRAPHIQUES
+# ==========================================
+*.pub
+*.pem
+id_rsa*
+ma_cle*
+*cle_privee*
