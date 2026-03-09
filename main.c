@@ -105,10 +105,7 @@ int main(int argc, char *argv[]) {
         // On initialise à NULL pour que free_rsa_keys fonctionne même si l'import échoue partiellement
         memset(&keys, 0, sizeof(rsa_keys)); 
 
-        if (import_private_key_pem(priv_key_file, &keys) != 0) {
-            fprintf(stderr, "Erreur : Impossible de lire la clé privée %s\n", priv_key_file);
-            return EXIT_FAILURE;
-        }
+        keys = import_private_key_pem(priv_key_file);
 
         if (dechiffrer_fichier(src_file, dest_file, keys) != 0) {
             fprintf(stderr, "Échec du déchiffrement.\n");

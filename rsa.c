@@ -309,19 +309,44 @@ bignmb chiffrer_bloc (bignmb M, bignmb e, bignmb n, bignmb R2){
 bignmb dechiffrement_bloc (bignmb C, rsa_keys key){
     bignmb R2p = Calculer_R2_Mod_N(key.p);
     bignmb R2q = Calculer_R2_Mod_N(key.q);
-    bignmb m1 = Puiss_big(C,key.dp, key.p,R2p);
-    bignmb m2 = Puiss_big(C,key.dq,key.q,R2q);
-    bignmb h;
-    if (Comp_big(m1,m2) > 1){
-        h = Montgomery_Mult(key.qinv,Sub_big((Add_big(m1,key.p)),m2),key.p);
+
+    // m1 = C^dp mod p,  m2 = C^dq mod q
+    bignmb Cp  = Mod_big(C, key.p);
+    bignmb Cq  = Mod_big(C, key.q);
+    bignmb m1  = Puiss_big(Cp, key.dp, key.p, R2p);
+    bignmb m2  = Puiss_big(Cq, key.dq, key.q, R2q);
+    free_big(Cp); free_big(Cq);
+    free_big(R2p); free_big(R2q);
+
+    // BUG CORRIGE 4 : Comp_big retourne -1,0,1 — jamais > 1
+    // On doit ajouter p à m1 si m1 < m2 pour que la soustraction soit positive
+    bignmb m1_adj;
+    if (Comp_big(m1, m2) < 0) {
+        m1_adj = Add_big(m1, key.p);
     } else {
-        h = Montgomery_Mult(key.qinv,Sub_big(m1,m2),key.p);
+        m1_adj = new_big(0);
+        copy_big(m1_adj, m1);
     }
-    bignmb res = Add_big(m2,Mult_big(h,key.q));
+
+    // BUG CORRIGE 5 : Ne pas utiliser Montgomery_Mult sur des valeurs normales.
+    // h = (qinv * (m1 - m2)) mod p  — calcul entier normal
+    bignmb diff = Sub_big(m1_adj, m2);
+    free_big(m1_adj);
+
+    bignmb prod = Mult_big(key.qinv, diff);
+    free_big(diff);
+    bignmb h = Mod_big(prod, key.p);
+    free_big(prod);
+
+    // m = m2 + h * q
+    bignmb hq  = Mult_big(h, key.q);
+    bignmb res = Add_big(m2, hq);
+
     free_big(m1);
     free_big(m2);
     free_big(h);
-    return res ;
+    free_big(hq);
+    return res;
 }
 
 // Convertit un tableau d'octets (Big-Endian) en bignmb

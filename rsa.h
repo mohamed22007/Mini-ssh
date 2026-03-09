@@ -1,7 +1,7 @@
 #ifndef RSA_H
 #define RSA_H
-#define BLOC_SIZE 200
-#define RSA_KEY_SIZE 256
+#define RSA_KEY_SIZE 512        // n = 4096 bits = 512 octets (T_LIMIT=32 => p,q de 2048 bits)
+#define BLOC_SIZE (RSA_KEY_SIZE - 11)  // Max PKCS#1 v1.5 : RSA_KEY_SIZE - 11 = 501 octets
 
 #include "bigNmb.h"
 #include <stdio.h>
@@ -49,4 +49,10 @@ int dechiffrer_fichier(const char* fichier_in, const char* fichier_out, rsa_keys
 // Chiffrement d'un fichier complet par blocs
 int chiffrer_fichier(const char* fichier_in, const char* fichier_out, bignmb e, bignmb n);
 
-#endif 
+// Importation de la clé publique depuis un fichier OpenSSH
+int import_public_key_ssh(const char* filename, bignmb* e_out, bignmb* n_out);
+
+// Importation de la clé privée depuis un fichier PEM (retourne la struct)
+rsa_keys import_private_key_pem(const char* filename);
+
+#endif
