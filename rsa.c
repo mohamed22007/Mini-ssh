@@ -301,3 +301,360 @@ int export_private_key_pem(rsa_keys* keys, const char* filename) {
     fclose(f);
     return 0;
 }
+
+bignmb chiffrer_bloc (bignmb M, bignmb e, bignmb n, bignmb R2){
+    return Puiss_big(M,e,n,R2);
+}
+
+bignmb dechiffrement_bloc (bignmb C, rsa_keys key){
+    bignmb R2p = Calculer_R2_Mod_N(key.p);
+    bignmb R2q = Calculer_R2_Mod_N(key.q);
+    bignmb m1 = Puiss_big(C,key.dp, key.p,R2p);
+    bignmb m2 = Puiss_big(C,key.dq,key.q,R2q);
+    bignmb h;
+    if (Comp_big(m1,m2) > 1){
+        h = Montgomery_Mult(key.qinv,Sub_big((Add_big(m1,key.p)),m2),key.p);
+    } else {
+        h = Montgomery_Mult(key.qinv,Sub_big(m1,m2),key.p);
+    }
+    bignmb res = Add_big(m2,Mult_big(h,key.q));
+    free_big(m1);
+    free_big(m2);
+    free_big(h);
+    return res ;
+}
+
+// Convertit un tableau d'octets (Big-Endian) en bignmb
+bignmb bytes_to_big(const uint8_t* data, size_t len) {
+    size_t num_words = (len + 7) / 8;
+    bignmb res = new_big(0);
+    res[0] = num_words;
+    
+    int byte_idx = len - 1;
+    for (size_t i = 1; i <= num_words; i++) {
+        uint64_t word = 0;
+        for (int j = 0; j < 8; j++) {
+            if (byte_idx >= 0) {
+                word |= ((uint64_t)data[byte_idx]) << (j * 8);
+                byte_idx--;
+            }
+        }
+        res[i] = word;
+    }
+    
+    // Nettoyer les zéros de tête
+    while(res[0] > 1 && res[res[0]] == 0) res[0]--;
+    return res;
+}
+
+// Applique le Padding PKCS#1 v1.5
+void appliquer_padding_pkcs1(uint8_t *dest, const uint8_t *data_brute, size_t taille_lue) {
+    memset(dest, 0, RSA_KEY_SIZE);
+    dest[0] = 0x00;
+    dest[1] = 0x02;
+    
+    int fin_ps = RSA_KEY_SIZE - taille_lue - 1;
+    for (int i = 2; i < fin_ps; i++) {
+        uint8_t r;
+        do {
+            r = rand() % 256; // Idéalement, utilisez /dev/urandom ici pour plus de sécurité
+        } while (r == 0); // Pas de 0 dans le padding !
+        dest[i] = r;
+    }
+    
+    dest[fin_ps] = 0x00; // Séparateur
+    memcpy(dest + fin_ps + 1, data_brute, taille_lue);
+}
+
+// Retire le Padding PKCS#1 v1.5 et récupère les données
+int retirer_padding_pkcs1(const uint8_t *padded_data, size_t padded_len, uint8_t *dest_brute) {
+    int idx = 0;
+    
+    // big_to_bytes enlève souvent le 0x00 de tête, on s'adapte :
+    if (padded_data[idx] == 0x00) idx++;
+    
+    if (padded_data[idx] != 0x02) return -1; // Erreur de format
+    idx++;
+    
+    // Avancer jusqu'au séparateur 0x00
+    while (idx < (int)padded_len && padded_data[idx] != 0x00) {
+        idx++;
+    }
+    
+    if (idx == (int)padded_len) return -1; // Séparateur non trouvé
+    idx++; // Sauter le 0x00
+    
+    int data_len = padded_len - idx;
+    memcpy(dest_brute, padded_data + idx, data_len);
+    
+    return data_len;
+}
+
+
+// Chiffrement d'un fichier complet par blocs
+int chiffrer_fichier(const char* fichier_in, const char* fichier_out, bignmb e, bignmb n) {
+    FILE* f_in = fopen(fichier_in, "rb");
+    FILE* f_out = fopen(fichier_out, "wb");
+    
+    if (!f_in || !f_out) {
+        perror("Erreur d'ouverture des fichiers");
+        if (f_in) fclose(f_in);
+        if (f_out) fclose(f_out);
+        return -1;
+    }
+
+    bignmb R2 = Calculer_R2_Mod_N(n); // Précalcul une seule fois pour tout le fichier !
+    
+    uint8_t buffer_lu[BLOC_SIZE];
+    uint8_t bloc_padde[RSA_KEY_SIZE];
+    size_t octets_lus;
+
+
+    // Streaming : Boucle de lecture du fichier
+    while ((octets_lus = fread(buffer_lu, 1, BLOC_SIZE, f_in)) > 0) {
+        
+        // Ajouter le padding
+        appliquer_padding_pkcs1(bloc_padde, buffer_lu, octets_lus);
+        
+        // Convertir en BigInt
+        bignmb M = bytes_to_big(bloc_padde, RSA_KEY_SIZE);
+        
+        // Chiffrement mathématique
+        bignmb C = chiffrer_bloc(M, e, n, R2);
+        
+        // Convertir le chiffré en octets
+        uint8_t* c_bytes = NULL;
+        size_t c_len = big_to_bytes(C, &c_bytes);
+        
+        // Ajuster la taille pour toujours écrire RSA_KEY_SIZE octets
+        uint8_t bloc_final[RSA_KEY_SIZE];
+        memset(bloc_final, 0, RSA_KEY_SIZE);
+        if (c_len <= RSA_KEY_SIZE) {
+            memcpy(bloc_final + (RSA_KEY_SIZE - c_len), c_bytes, c_len);
+        }
+
+        // Écriture dans le fichier
+        fwrite(bloc_final, 1, RSA_KEY_SIZE, f_out);
+        
+        // Nettoyage mémoire du bloc
+        free_big(M);
+        free_big(C);
+        free(c_bytes);
+    }
+
+    free_big(R2);
+    fclose(f_in);
+    fclose(f_out);
+    return 0;
+}
+
+
+// Déchiffrement d'un fichier complet par blocs
+int dechiffrer_fichier(const char* fichier_in, const char* fichier_out, rsa_keys cles_privees) {
+    FILE* f_in = fopen(fichier_in, "rb");
+    FILE* f_out = fopen(fichier_out, "wb");
+    
+    if (!f_in || !f_out) {
+        perror("Erreur d'ouverture des fichiers");
+        if (f_in) fclose(f_in);
+        if (f_out) fclose(f_out);
+        return -1;
+    }
+
+    // Le fichier chiffré contient des blocs de taille stricte RSA_KEY_SIZE
+    uint8_t buffer_lu[RSA_KEY_SIZE];
+    uint8_t buffer_clair[RSA_KEY_SIZE];
+    size_t octets_lus;
+
+
+    // Lecture par blocs de la taille de la clé (256 octets)
+    while ((octets_lus = fread(buffer_lu, 1, RSA_KEY_SIZE, f_in)) > 0) {
+        
+        if (octets_lus != RSA_KEY_SIZE) {
+            fprintf(stderr, "Erreur : Fichier chiffré corrompu (bloc incomplet).\n");
+            break;
+        }
+
+        // onvertir en BigInt
+        bignmb C = bytes_to_big(buffer_lu, RSA_KEY_SIZE);
+        
+        // Déchiffrement mathématique (Optimisé CRT)
+        bignmb M = dechiffrement_bloc(C, cles_privees);
+        
+        // Convertir le clair en octets
+        uint8_t* m_bytes = NULL;
+        size_t m_len = big_to_bytes(M, &m_bytes);
+        
+        // Retirer le padding
+        int donnees_reelles_len = retirer_padding_pkcs1(m_bytes, m_len, buffer_clair);
+        
+        if (donnees_reelles_len < 0) {
+            fprintf(stderr, "Erreur de déchiffrement : Padding invalide.\n");
+            free_big(C); free_big(M); free(m_bytes);
+            break; // Clé incorrecte ou fichier corrompu
+        }
+
+        // Écrire le texte clair dans le fichier de sortie
+        fwrite(buffer_clair, 1, donnees_reelles_len, f_out);
+        
+        // Nettoyage mémoire du bloc
+        free_big(C);
+        free_big(M);
+        free(m_bytes);
+    }
+
+    fclose(f_in);
+    fclose(f_out);
+    return 0;
+}
+
+
+// Décodeur Base64 (Ignore les retours à la ligne du PEM)
+static int b64_index(char c) {
+    if (c >= 'A' && c <= 'Z') return c - 'A';
+    if (c >= 'a' && c <= 'z') return c - 'a' + 26;
+    if (c >= '0' && c <= '9') return c - '0' + 52;
+    if (c == '+') return 62;
+    if (c == '/') return 63;
+    return -1;
+}
+
+size_t base64_decode(const char* input, uint8_t* output) {
+    size_t in_len = strlen(input);
+    size_t out_len = 0;
+    uint32_t triple = 0;
+    int count = 0;
+
+    for (size_t i = 0; i < in_len; i++) {
+        if (input[i] == '=' || input[i] == '\n' || input[i] == '\r') continue;
+        
+        int val = b64_index(input[i]);
+        if (val == -1) continue;
+
+        triple = (triple << 6) | val;
+        count++;
+
+        if (count == 4) {
+            output[out_len++] = (triple >> 16) & 0xFF;
+            output[out_len++] = (triple >> 8) & 0xFF;
+            output[out_len++] = triple & 0xFF;
+            triple = 0;
+            count = 0;
+        }
+    }
+
+    if (count == 3) {
+        triple <<= 6;
+        output[out_len++] = (triple >> 16) & 0xFF;
+        output[out_len++] = (triple >> 8) & 0xFF;
+    } else if (count == 2) {
+        triple <<= 12;
+        output[out_len++] = (triple >> 16) & 0xFF;
+    }
+    return out_len;
+}
+
+
+// Lit un uint32_t en Big-Endian (pour format SSH)
+static uint32_t read_u32_be(const uint8_t* buf) {
+    return (buf[0] << 24) | (buf[1] << 16) | (buf[2] << 8) | buf[3];
+}
+
+// Lit la longueur d'un champ ASN.1 DER (pour format PEM)
+static size_t read_der_len(const uint8_t* buf, size_t* offset) {
+    uint8_t first = buf[(*offset)++];
+    if (first < 128) return first;
+    
+    int num_bytes = first & 0x7F;
+    size_t len = 0;
+    for (int i = 0; i < num_bytes; i++) {
+        len = (len << 8) | buf[(*offset)++];
+    }
+    return len;
+}
+
+
+// Importe la clé publique depuis un fichier OpenSSH
+int import_public_key_ssh(const char* filename, bignmb* e_out, bignmb* n_out) {
+    FILE* f = fopen(filename, "r");
+    if (!f) return -1;
+
+    char b64_buffer[8192] = {0};
+    
+    // On ignore le premier mot ("ssh-rsa") et on lit le Base64
+    if (fscanf(f, "%*s %8191s", b64_buffer) != 1) {
+        fclose(f);
+        return -1;
+    }
+    fclose(f);
+
+    uint8_t blob[8192];
+    size_t blob_len = base64_decode(b64_buffer, blob);
+    size_t offset = 0;
+
+    // Lire et ignorer le type "ssh-rsa"
+    uint32_t type_len = read_u32_be(blob + offset); offset += 4 + type_len;
+    
+    // Lire l'exposant 'e'
+    uint32_t e_len = read_u32_be(blob + offset); offset += 4;
+    *e_out = bytes_to_big(blob + offset, e_len); offset += e_len;
+
+    // Lire le modulo 'n'
+    uint32_t n_len = read_u32_be(blob + offset); offset += 4;
+    *n_out = bytes_to_big(blob + offset, n_len);
+
+    return 0;
+}
+
+// Fonction locale pour lire un INTEGER dans l'ASN.1
+    bignmb read_next_integer(const uint8_t* buffer, size_t* off) {
+        if (buffer[(*off)++] != 0x02) return NULL; // Vérifier le tag INTEGER
+        size_t len = read_der_len(buffer, off);
+        bignmb res = bytes_to_big(buffer + *off, len);
+        *off += len;
+        return res;
+    }
+    
+
+
+// Importe la clé privée depuis un fichier PEM
+rsa_keys import_private_key_pem(const char* filename) {
+    FILE* f = fopen(filename, "r");
+    if (!f) exit(0);
+
+    char b64_buffer[16384] = {0};
+    char line[256];
+    
+    // Lecture du fichier en ignorant les entêtes -----BEGIN... et -----END...
+    while (fgets(line, sizeof(line), f)) {
+        if (line[0] != '-') {
+            strncat(b64_buffer, line, sizeof(b64_buffer) - strlen(b64_buffer) - 1);
+        }
+    }
+    fclose(f);
+
+    uint8_t der[16384];
+    size_t der_len = base64_decode(b64_buffer, der);
+    size_t offset = 0;
+
+    // Vérifier le tag SEQUENCE (0x30)
+    if (der[offset++] != 0x30) exit(0);
+    read_der_len(der, &offset); // On passe la longueur globale
+
+
+    // Extraction dans l'ordre strict de la norme PKCS#1
+    bignmb version = read_next_integer(der, &offset); 
+    free_big(version);
+    rsa_keys keys ;
+    
+    keys.n    = read_next_integer(der, &offset);
+    keys.e    = read_next_integer(der, &offset);
+    keys.d    = read_next_integer(der, &offset);
+    keys.p    = read_next_integer(der, &offset);
+    keys.q    = read_next_integer(der, &offset);
+    keys.dp   = read_next_integer(der, &offset);
+    keys.dq   = read_next_integer(der, &offset);
+    keys.qinv = read_next_integer(der, &offset);
+
+    return keys;
+}

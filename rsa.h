@@ -1,5 +1,7 @@
 #ifndef RSA_H
 #define RSA_H
+#define BLOC_SIZE 200
+#define RSA_KEY_SIZE 256
 
 #include "bigNmb.h"
 #include <stdio.h>
@@ -34,5 +36,17 @@ int export_private_key_pem(rsa_keys* keys, const char* filename);
 size_t big_to_bytes(bignmb a, uint8_t** buffer);
 // Encode un tableau d'octets en Base64
 void base64_encode(const uint8_t* data, size_t input_length, char* encoded_data);
+
+// Fonction pour chiffrer le message par bloque 
+bignmb chiffrer_bloc (bignmb M, bignmb e, bignmb n, bignmb R2);
+
+// Fonction Pour dechiffrement 
+bignmb dechiffrement_bloc (bignmb C, rsa_keys key);
+
+// Déchiffrement d'un fichier complet par blocs
+int dechiffrer_fichier(const char* fichier_in, const char* fichier_out, rsa_keys cles_privees);
+
+// Chiffrement d'un fichier complet par blocs
+int chiffrer_fichier(const char* fichier_in, const char* fichier_out, bignmb e, bignmb n);
 
 #endif 
